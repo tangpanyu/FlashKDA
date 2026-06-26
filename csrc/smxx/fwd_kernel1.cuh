@@ -287,6 +287,8 @@ __global__ void __launch_bounds__(NumThreads, 8) _flash_kda_fwd_prepare(
     // --- Fused gate activation + cumsum + k tail zero-fill ---
     // Threads 0-127: gate(g_bf16 + dt_bias) → cumulative sum, eliminates raw-g smem round-trip
     // Threads 128-255: zero k for tail rows
+    // 这里每个线程处理一个数据，因为g是HxK的shape，所以每个K通道都需要求前缀和
+    // 每次处理一个HEAD的g
     {
         int actual_len = min(CHUNK, seq_len - local_t * CHUNK);
         if (compute_tid < 128) {
@@ -305,11 +307,13 @@ __global__ void __launch_bounds__(NumThreads, 8) _flash_kda_fwd_prepare(
                 } else {
                     g_val = 0.0f;
                 }
+                // 这里并不是g内求前缀和，而是g的K维度上
                 sum += g_val;
                 g_smem[row * D + col] = sum;
             }
             shared_storage.g_total.begin()[col] = sum;
         } else {
+            // 这段是在处理最后一个不满 CHUNK 的 tile，把无效 token 对应的 k 清零
             int col = compute_tid - 128;
             BF16* k_smem = shared_storage.k.begin();
             for (int row = actual_len; row < CHUNK; ++row) {
