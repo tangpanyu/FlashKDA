@@ -366,6 +366,8 @@ __global__ void __launch_bounds__(NumThreads, 8) _flash_kda_fwd_prepare(
         BF16  reg_k[N_TILES][2];
         float reg_gt[N_TILES][2];
 
+        // 8 个 warp 协作读取每个 8x64 子块：g 选择 8 列，t 选择其中连续 2 个元素，
+        // (warp_id + g) % 8 交错覆盖 8 行；在 union smem 被复用前将 q/k/g/g_total 保存到寄存器。
         #pragma unroll
         for (int m_blk = 0; m_blk < CHUNK; m_blk += 8) {
             #pragma unroll
